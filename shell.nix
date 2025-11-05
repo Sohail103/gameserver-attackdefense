@@ -4,8 +4,6 @@ let
   pythonWithPackages = python.withPackages (ps: with ps; [
     flask
     apscheduler
-    requests
-    # nmapthon2  
   ]);
 in
 pkgs.mkShell {
@@ -17,6 +15,6 @@ pkgs.mkShell {
   ];
   
   shellHook = ''
-    echo "nix shell started with flask, apscheduler and requests"
+    echo "nix shell started with flask, apscheduler"
   '';
 }
