@@ -25,7 +25,6 @@ class FlagValidator:
     def generate_flag(self, victim_team: str) -> str:
         """
         Generate a unique flag for a victim team.
-        In a real CTF, you'd deploy this flag to the victim's service.
         """
         timestamp = int(time.time())
         data = f"{victim_team}:{timestamp}".encode()

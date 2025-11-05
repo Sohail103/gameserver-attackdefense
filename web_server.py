@@ -1,12 +1,14 @@
 """
 web_server.py
 
-Flask web server for CTF game interface.
-Provides scoreboard display and control endpoints.
+Flask web servers for CTF game interface.
+- Public server: Scoreboard and flag submission (accessible to teams)
+- Admin server: Game controls (localhost only)
 """
 
 import logging
 from flask import Flask, render_template_string, request, jsonify
+from threading import Thread
 
 from game_state import game_state, GameStatus, Team
 from scanner import scanner
@@ -14,11 +16,13 @@ from flag_validator import flag_validator
 
 logger = logging.getLogger("web_server")
 
-app = Flask(__name__)
+# Create two separate Flask apps
+public_app = Flask('public')
+admin_app = Flask('admin')
 
 
-# HTML template for scoreboard
-SCOREBOARD_TEMPLATE = """
+# ===== PUBLIC SCOREBOARD TEMPLATE ===== #
+PUBLIC_SCOREBOARD_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head>
@@ -64,28 +68,69 @@ SCOREBOARD_TEMPLATE = """
         tr:hover { background: #002200; }
         .rank { font-weight: bold; font-size: 1.2em; }
         .score { font-weight: bold; color: #00ff00; }
-        .controls {
-            text-align: center;
-            margin: 30px 0;
+        .info { 
+            text-align: center; 
+            margin: 10px 0;
+            color: #888;
+        }
+        .flag-form {
+            max-width: 600px;
+            margin: 30px auto;
+            padding: 20px;
+            border: 2px solid #00ff00;
+            background: #001a00;
+        }
+        .flag-form h2 {
+            margin-top: 0;
+            color: #00ff00;
+        }
+        .form-group {
+            margin: 15px 0;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #00ff00;
+        }
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 10px;
+            background: #003300;
+            border: 1px solid #00ff00;
+            color: #00ff00;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            box-sizing: border-box;
         }
         button {
             background: #003300;
             color: #00ff00;
             border: 2px solid #00ff00;
             padding: 10px 20px;
-            margin: 0 5px;
             cursor: pointer;
             font-family: 'Courier New', monospace;
             font-size: 14px;
+            width: 100%;
         }
         button:hover {
             background: #00ff00;
             color: #000000;
         }
-        .info { 
-            text-align: center; 
+        .message {
+            padding: 10px;
             margin: 10px 0;
-            color: #888;
+            border: 2px solid;
+            display: none;
+        }
+        .message.success {
+            border-color: #00ff00;
+            background: #001a00;
+            color: #00ff00;
+        }
+        .message.error {
+            border-color: #ff0000;
+            background: #1a0000;
+            color: #ff0000;
         }
     </style>
 </head>
@@ -105,7 +150,191 @@ SCOREBOARD_TEMPLATE = """
                 <tr>
                     <th>Rank</th>
                     <th>Team</th>
-                    <th>IP</th>
+                    <th>Score</th>
+                    <th>Flags</th>
+                    <th>Services Down</th>
+                    <th>Last Scan</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for team in scoreboard %}
+                <tr>
+                    <td class="rank">#{{ team.rank }}</td>
+                    <td>{{ team.name }}</td>
+                    <td class="score">{{ team.score }}</td>
+                    <td>{{ team.flags_captured }}</td>
+                    <td>{{ team.services_down }}</td>
+                    <td>{% if team.last_scan %}{{ team.last_scan | timestamp }}{% else %}Never{% endif %}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <div class="flag-form">
+            <h2>🚩 Submit Flag</h2>
+            <div id="message" class="message"></div>
+            <form id="flagForm">
+                <div class="form-group">
+                    <label for="team">Your Team:</label>
+                    <select id="team" name="team" required>
+                        <option value="">-- Select Team --</option>
+                        {% for team in scoreboard %}
+                        <option value="{{ team.name }}">{{ team.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="flag">Flag:</label>
+                    <input type="text" id="flag" name="flag" placeholder="FLAG{...}" required>
+                </div>
+                <button type="submit">Submit Flag</button>
+            </form>
+        </div>
+
+        <div class="info">
+            Scans: {{ game_info.scan_count }} | 
+            Flags Submitted: {{ game_info.flag_submissions }}
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('flagForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const team = document.getElementById('team').value;
+            const flag = document.getElementById('flag').value;
+            const messageDiv = document.getElementById('message');
+            
+            fetch('/api/submit_flag', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ team: team, flag: flag })
+            })
+            .then(r => r.json())
+            .then(data => {
+                messageDiv.textContent = data.message + (data.points ? ' (+' + data.points + ' points)' : '');
+                messageDiv.className = 'message ' + (data.success ? 'success' : 'error');
+                messageDiv.style.display = 'block';
+                
+                if (data.success) {
+                    document.getElementById('flag').value = '';
+                    setTimeout(() => location.reload(), 2000);
+                }
+            })
+            .catch(err => {
+                messageDiv.textContent = 'Error: ' + err;
+                messageDiv.className = 'message error';
+                messageDiv.style.display = 'block';
+            });
+        });
+    </script>
+</body>
+</html>
+"""
+
+
+# ===== ADMIN CONTROL TEMPLATE ===== #
+ADMIN_TEMPLATE = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>CTF Admin Panel</title>
+    <meta http-equiv="refresh" content="5">
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            background: #0a0a0a;
+            color: #ff6600;
+            margin: 0;
+            padding: 20px;
+        }
+        .container { max-width: 1200px; margin: 0 auto; }
+        h1 { text-align: center; color: #ff6600; text-shadow: 0 0 10px #ff6600; }
+        .warning {
+            text-align: center;
+            padding: 15px;
+            margin: 20px 0;
+            border: 2px solid #ff0000;
+            background: #1a0000;
+            color: #ff6600;
+            font-weight: bold;
+        }
+        .status {
+            text-align: center;
+            padding: 10px;
+            margin: 20px 0;
+            border: 2px solid #ff6600;
+            background: #1a0a00;
+        }
+        .status.running { border-color: #00ff00; color: #00ff00; }
+        .status.waiting { border-color: #ffaa00; color: #ffaa00; }
+        .status.paused { border-color: #ff0000; color: #ff0000; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            box-shadow: 0 0 20px rgba(255,102,0,0.2);
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border: 1px solid #ff6600;
+        }
+        th {
+            background: #331100;
+            color: #ff6600;
+            font-weight: bold;
+        }
+        tr:nth-child(even) { background: #110500; }
+        tr:hover { background: #221100; }
+        .rank { font-weight: bold; font-size: 1.2em; }
+        .score { font-weight: bold; color: #ff6600; }
+        .controls {
+            text-align: center;
+            margin: 30px 0;
+        }
+        button {
+            background: #331100;
+            color: #ff6600;
+            border: 2px solid #ff6600;
+            padding: 10px 20px;
+            margin: 0 5px;
+            cursor: pointer;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+        }
+        button:hover {
+            background: #ff6600;
+            color: #000000;
+        }
+        .info { 
+            text-align: center; 
+            margin: 10px 0;
+            color: #888;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔒 CTF ADMIN PANEL 🔒</h1>
+        
+        <div class="warning">
+            ⚠️ ADMIN ONLY - This interface is for game organizers ⚠️
+        </div>
+        
+        <div class="status {{ game_info.status }}">
+            <strong>Game Status:</strong> {{ game_info.status.upper() }}
+            {% if game_info.start_time %}
+            | Started: {{ game_info.start_time | timestamp }}
+            {% endif %}
+        </div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Rank</th>
+                    <th>Team</th>
+                    <th>IP Address</th>
                     <th>Score</th>
                     <th>Flags</th>
                     <th>Services Down</th>
@@ -157,7 +386,8 @@ SCOREBOARD_TEMPLATE = """
 """
 
 
-@app.template_filter('timestamp')
+@public_app.template_filter('timestamp')
+@admin_app.template_filter('timestamp')
 def timestamp_filter(ts):
     """Format timestamp"""
     if ts is None:
@@ -167,59 +397,40 @@ def timestamp_filter(ts):
     return dt.strftime('%H:%M:%S')
 
 
-@app.route('/')
-def index():
-    """Main scoreboard page"""
+# ===== PUBLIC ENDPOINTS ===== #
+@public_app.route('/')
+def public_index():
+    """Public scoreboard page"""
     scoreboard = game_state.get_scoreboard()
     game_info = game_state.get_game_info()
-    scanner_running = scanner.is_running()
     
     return render_template_string(
-        SCOREBOARD_TEMPLATE,
+        PUBLIC_SCOREBOARD_TEMPLATE,
         scoreboard=scoreboard,
-        game_info=game_info,
-        scanner_running=scanner_running
+        game_info=game_info
     )
 
 
-@app.route('/api/scoreboard')
-def api_scoreboard():
-    """JSON scoreboard endpoint"""
+@public_app.route('/api/scoreboard')
+def public_api_scoreboard():
+    """JSON scoreboard endpoint (no IPs exposed)"""
+    scoreboard = game_state.get_scoreboard()
+    # Remove IP addresses from public API
+    for team in scoreboard:
+        team.pop('ip', None)
+    
     return jsonify({
-        "scoreboard": game_state.get_scoreboard(),
-        "game_info": game_state.get_game_info(),
-        "scanner_running": scanner.is_running()
+        "scoreboard": scoreboard,
+        "game_info": {
+            "status": game_state.get_status().value,
+            "start_time": game_state.get_game_info()["start_time"],
+        }
     })
 
 
-@app.route('/api/control/<action>', methods=['POST'])
-def control_game(action):
-    """Control game state"""
-    if action == 'start':
-        game_state.set_status(GameStatus.RUNNING)
-        if not scanner.is_running():
-            scanner.start()
-        return jsonify({"success": True, "message": "Game started!"})
-    
-    elif action == 'pause':
-        game_state.set_status(GameStatus.PAUSED)
-        return jsonify({"success": True, "message": "Game paused"})
-    
-    elif action == 'stop':
-        game_state.set_status(GameStatus.FINISHED)
-        scanner.stop()
-        return jsonify({"success": True, "message": "Game stopped"})
-    
-    else:
-        return jsonify({"success": False, "message": "Unknown action"}), 400
-
-
-@app.route('/api/submit_flag', methods=['POST'])
-def submit_flag():
-    """
-    Flag submission endpoint.
-    POST body: {"team": "team-name", "flag": "FLAG{...}"}
-    """
+@public_app.route('/api/submit_flag', methods=['POST'])
+def public_submit_flag():
+    """Flag submission endpoint"""
     data = request.get_json()
     
     if not data or 'team' not in data or 'flag' not in data:
@@ -255,7 +466,78 @@ def submit_flag():
     })
 
 
-def run_web_server(host='0.0.0.0', port=5000, debug=False):
-    """Run the Flask web server"""
-    logger.info("Starting web server on %s:%d", host, port)
-    app.run(host=host, port=port, debug=debug)
+# ===== ADMIN ENDPOINTS ===== #
+@admin_app.route('/')
+def admin_index():
+    """Admin control panel"""
+    scoreboard = game_state.get_scoreboard()
+    game_info = game_state.get_game_info()
+    scanner_running = scanner.is_running()
+    
+    return render_template_string(
+        ADMIN_TEMPLATE,
+        scoreboard=scoreboard,
+        game_info=game_info,
+        scanner_running=scanner_running
+    )
+
+
+@admin_app.route('/api/scoreboard')
+def admin_api_scoreboard():
+    """JSON scoreboard endpoint with full details"""
+    return jsonify({
+        "scoreboard": game_state.get_scoreboard(),
+        "game_info": game_state.get_game_info(),
+        "scanner_running": scanner.is_running()
+    })
+
+
+@admin_app.route('/api/control/<action>', methods=['POST'])
+def admin_control_game(action):
+    """Control game state - ADMIN ONLY"""
+    if action == 'start':
+        game_state.set_status(GameStatus.RUNNING)
+        if not scanner.is_running():
+            scanner.start()
+        return jsonify({"success": True, "message": "Game started!"})
+    
+    elif action == 'pause':
+        game_state.set_status(GameStatus.PAUSED)
+        return jsonify({"success": True, "message": "Game paused"})
+    
+    elif action == 'stop':
+        game_state.set_status(GameStatus.FINISHED)
+        scanner.stop()
+        return jsonify({"success": True, "message": "Game stopped"})
+    
+    else:
+        return jsonify({"success": False, "message": "Unknown action"}), 400
+
+
+def run_public_server(host='0.0.0.0', port=5000):
+    """Run the public Flask web server"""
+    logger.info("Starting PUBLIC server on %s:%d", host, port)
+    public_app.run(host=host, port=port, debug=False, threaded=True)
+
+
+def run_admin_server(host='127.0.0.1', port=5001):
+    """Run the admin Flask web server"""
+    logger.info("Starting ADMIN server on %s:%d (localhost only)", host, port)
+    admin_app.run(host=host, port=port, debug=False, threaded=True)
+
+
+def run_both_servers(public_host='0.0.0.0', public_port=5000, 
+                     admin_host='127.0.0.1', admin_port=5001):
+    """Run both public and admin servers in separate threads"""
+    
+    # Start public server in a thread
+    public_thread = Thread(
+        target=run_public_server,
+        args=(public_host, public_port),
+        daemon=True,
+        name="public-server"
+    )
+    public_thread.start()
+    
+    # Start admin server in main thread (so Ctrl+C works)
+    run_admin_server(admin_host, admin_port)

@@ -10,7 +10,7 @@ import logging
 import argparse
 
 from game_state import game_state, Team
-from web_server import run_web_server
+from web_server import run_both_servers
 
 # Configure logging
 logging.basicConfig(
@@ -63,7 +63,13 @@ def main():
         '--port',
         type=int,
         default=5000,
-        help='Port for web server (default: 5000)'
+        help='Port for public web server (default: 5000)'
+    )
+    parser.add_argument(
+        '--admin-port',
+        type=int,
+        default=5001,
+        help='Port for admin interface (default: 5001)'
     )
     parser.add_argument(
         '--scan-interval',
@@ -109,7 +115,8 @@ def main():
     logger.info("CTF Attack/Defense Game Server")
     logger.info("=" * 60)
     logger.info("Configuration:")
-    logger.info("  Web Server: http://%s:%d", args.host, args.port)
+    logger.info("  Public Server: http://%s:%d (accessible to teams)", args.host, args.port)
+    logger.info("  Admin Server: http://127.0.0.1:%d (localhost only)", args.admin_port)
     logger.info("  Scan Interval: %d seconds", args.scan_interval)
     logger.info("  Penalty per port: %d points", args.penalty)
     logger.info("  Flag points: %d points", args.flag_points)
@@ -124,18 +131,32 @@ def main():
     print("\n" + "=" * 60)
     print("🎮 CTF Game Server Ready!")
     print("=" * 60)
-    print(f"📊 Scoreboard: http://{args.host}:{args.port}")
-    print(f"🚀 To start scanning, click 'Start Game' on the web interface")
-    print(f"🏁 Flag submission: POST to http://{args.host}:{args.port}/api/submit_flag")
-    print("   Example: curl -X POST http://localhost:5000/api/submit_flag \\")
-    print('            -H "Content-Type: application/json" \\')
-    print('            -d \'{"team": "team-alpha", "flag": "FLAG{...}"}\'')
+    print(f"📊 PUBLIC Scoreboard (teams): http://{args.host}:{args.port}")
+    print(f"🔒 ADMIN Panel (organizers): http://127.0.0.1:{args.admin_port}")
+    print(f"")
+    print(f"Teams can:")
+    print(f"  - View scoreboard")
+    print(f"  - Submit flags via web form or API")
+    print(f"")
+    print(f"Admins can:")
+    print(f"  - Start/pause/stop the game")
+    print(f"  - View full details including IPs")
+    print(f"")
+    print(f"🏁 Flag submission API:")
+    print(f"   curl -X POST http://{args.host}:{args.port}/api/submit_flag \\")
+    print('        -H "Content-Type: application/json" \\')
+    print('        -d \'{"team": "team-alpha", "flag": "FLAG{...}"}\'')
     print("=" * 60)
     print("\nPress Ctrl+C to stop the server\n")
     
-    # Run web server (blocks)
+    # Run web servers (blocks)
     try:
-        run_web_server(host=args.host, port=args.port, debug=args.debug)
+        run_both_servers(
+            public_host=args.host,
+            public_port=args.port,
+            admin_host='127.0.0.1',
+            admin_port=args.admin_port
+        )
     except KeyboardInterrupt:
         logger.info("\nShutdown requested by user")
     finally:

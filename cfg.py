@@ -21,7 +21,7 @@ WEB_PORT = 5000
 TEAMS = [
     Team(
         name="team-alpha",
-        ip="10.0.2.10",
+        ip="127.0.0.1",
         expected_tcp_ports=[22, 80, 5000],
         expected_udp_ports=[],
         score=1000
