@@ -6,6 +6,7 @@ checker.py
 - Runs nmap every 10 seconds to validate ports
 - Deducts score per missing service per-scan
 - Prints and logs scoreboard
+- Serves leaderboard via Flask web interface
 """
 
 import subprocess
@@ -14,6 +15,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from apscheduler.schedulers.background import BackgroundScheduler
+from flask import Flask, render_template_string, jsonify
 from typing import Dict, List
 
 # ----- Configuration ----- #
@@ -185,6 +187,139 @@ def print_scoreboard():
     print("\n".join(lines))
 
 
+# ----- Flask Web Server ----- #
+app = Flask(__name__)
+
+# HTML template for the leaderboard table
+LEADERBOARD_TEMPLATE = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>CTF Leaderboard</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        h1 { color: #333; }
+        table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+        th { background-color: #f2f2f2; font-weight: bold; }
+        tr:nth-child(even) { background-color: #f9f9f9; }
+        .score { font-weight: bold; color: #0066cc; }
+        .refresh { margin-top: 20px; }
+        .timestamp { color: #666; font-size: 0.9em; }
+    </style>
+    <meta http-equiv="refresh" content="30">
+</head>
+<body>
+    <h1>Attack/Defense Leaderboard</h1>
+    <p class="timestamp">Last updated: {{ timestamp }}</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Team Name</th>
+                <th>IP Address</th>
+                <th>Score</th>
+                <th>Missing TCP Ports</th>
+                <th>Missing UDP Ports</th>
+                <th>Last Scan</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for team in teams %}
+            <tr>
+                <td>{{ team.name }}</td>
+                <td>{{ team.ip }}</td>
+                <td class="score">{{ team.score }}</td>
+                <td>{{ team.missing_tcp | join(', ') if team.missing_tcp else 'None' }}</td>
+                <td>{{ team.missing_udp | join(', ') if team.missing_udp else 'None' }}</td>
+                <td>{{ team.last_scan_time }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <div class="refresh">
+        <p><a href="/leaderboard">Refresh</a> | <a href="/api/leaderboard">Raw JSON</a></p>
+    </div>
+</body>
+</html>
+"""
+
+@app.route('/leaderboard')
+def leaderboard():
+    """Serve the leaderboard as a nice HTML table"""
+    with _lock:
+        teams_data = []
+        for name, cfg in TEAMS.items():
+            team_history = history.get(name, {})
+            last_scan = team_history.get("last_scan", 0)
+            last_scan_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(last_scan)) if last_scan else "Never"
+            
+            # Get missing ports from last scan
+            tcp_results = team_history.get("tcp_results", {})
+            udp_results = team_history.get("udp_results", {})
+            missing_tcp = [p for p, state in tcp_results.items() if state != "open"]
+            missing_udp = [p for p, state in udp_results.items() if state != "open"]
+            
+            teams_data.append({
+                'name': name,
+                'ip': cfg['ip'],
+                'score': cfg.get('score', 0),
+                'missing_tcp': missing_tcp,
+                'missing_udp': missing_udp,
+                'last_scan_time': last_scan_time
+            })
+        
+        # Sort by score descending
+        teams_data.sort(key=lambda x: x['score'], reverse=True)
+        current_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+    
+    return render_template_string(LEADERBOARD_TEMPLATE, teams=teams_data, timestamp=current_time)
+
+@app.route('/api/leaderboard')
+def api_leaderboard():
+    """Serve the raw leaderboard data as JSON"""
+    with _lock:
+        leaderboard_data = []
+        for name, cfg in TEAMS.items():
+            team_history = history.get(name, {})
+            last_scan = team_history.get("last_scan", 0)
+            
+            # Get missing ports from last scan
+            tcp_results = team_history.get("tcp_results", {})
+            udp_results = team_history.get("udp_results", {})
+            missing_tcp = [p for p, state in tcp_results.items() if state != "open"]
+            missing_udp = [p for p, state in udp_results.items() if state != "open"]
+            
+            leaderboard_data.append({
+                'team_name': name,
+                'ip_address': cfg['ip'],
+                'score': cfg.get('score', 0),
+                'missing_tcp_ports': missing_tcp,
+                'missing_udp_ports': missing_udp,
+                'last_scan_timestamp': last_scan,
+                'expected_tcp_ports': cfg.get('expected_tcp_ports', []),
+                'expected_udp_ports': cfg.get('expected_udp_ports', [])
+            })
+        
+        # Sort by score descending
+        leaderboard_data.sort(key=lambda x: x['score'], reverse=True)
+    
+    return jsonify({
+        'leaderboard': leaderboard_data,
+        'last_updated': time.time(),
+        'scan_interval_seconds': SCAN_INTERVAL_SECONDS
+    })
+
+@app.route('/')
+def index():
+    """Redirect root to leaderboard"""
+    return leaderboard()
+
+def run_flask_server():
+    """Run the Flask server in the background"""
+    logger.info("Starting Flask web server on http://0.0.0.0:5555")
+    app.run(host='0.0.0.0', port=5555, debug=False, use_reloader=False)
+
+
 # ----- Main ----- #
 def main():
     logger.info("Starting CTF service checker")
@@ -198,6 +333,10 @@ def main():
     try:
         # Run an initial scan immediately (blocking)
         scan_all_teams()
+        # Start Flask server in a separate thread
+        flask_thread = threading.Thread(target=run_flask_server)
+        flask_thread.daemon = True
+        flask_thread.start()
         # Sleep forever; scheduler will run in background
         while True:
             time.sleep(3600)
