@@ -1,4 +1,4 @@
-"""
+"""""
 web_server.py
 
 Flask web servers for CTF game interface.
@@ -27,7 +27,7 @@ PUBLIC_SCOREBOARD_TEMPLATE = """
 <html>
 <head>
     <title>CTF Scoreboard</title>
-    <meta http-equiv="refresh" content="5">
+    <meta http-equiv="refresh" content="30">
     <style>
         body {
             font-family: 'Courier New', monospace;
@@ -428,15 +428,77 @@ def public_api_scoreboard():
     })
 
 
+@public_app.route('/api/generate_flag', methods=['POST'])
+def public_generate_flag():
+    """
+    Flag generation endpoint - used by services to get their current flag.
+    
+    Expected JSON body:
+    {
+        "team": "team-alpha",
+        "service": "web-server"
+    }
+    
+    Response:
+    {
+        "success": true,
+        "flag": "FLAG{team-alpha_web-server_abc123...}",
+        "message": "Flag generated successfully"
+    }
+    """
+    data = request.get_json()
+    
+    if not data or 'team' not in data or 'service' not in data:
+        return jsonify({
+            "success": False,
+            "flag": "",
+            "message": "Missing 'team' or 'service' field"
+        }), 400
+    
+    team_name = data['team']
+    service_name = data['service']
+    
+    # Generate flag
+    success, flag, message = flag_validator.generate_flag(team_name, service_name)
+    
+    if not success:
+        return jsonify({
+            "success": False,
+            "flag": "",
+            "message": message
+        }), 400
+    
+    return jsonify({
+        "success": True,
+        "flag": flag,
+        "message": message
+    })
+
+
 @public_app.route('/api/submit_flag', methods=['POST'])
 def public_submit_flag():
-    """Flag submission endpoint"""
+    """
+    Flag submission endpoint.
+    
+    Expected JSON body:
+    {
+        "team": "team-alpha",
+        "flag": "FLAG{...}"
+    }
+    
+    Response:
+    {
+        "success": true,
+        "message": "Valid flag! Captured team-bravo's web-server service",
+        "points": 50
+    }
+    """
     data = request.get_json()
     
     if not data or 'team' not in data or 'flag' not in data:
         return jsonify({
             "success": False,
-            "message": "Missing team or flag"
+            "message": "Missing 'team' or 'flag' field"
         }), 400
     
     team_name = data['team']
@@ -514,10 +576,14 @@ def admin_control_game(action):
         return jsonify({"success": False, "message": "Unknown action"}), 400
 
 
-def run_public_server(host='0.0.0.0', port=5000):
+def run_public_server(host='0.0.0.0', port=5000, ssl_cert=None, ssl_key=None):
+    ssl_context = None
+    if ssl_cert and ssl_key:
+        ssl_context = (ssl_cert, ssl_key)
+        logger.info("Using SSL: cert=%s key=%s", ssl_cert, ssl_key)
     """Run the public Flask web server"""
     logger.info("Starting PUBLIC server on %s:%d", host, port)
-    public_app.run(host=host, port=port, debug=False, threaded=True)
+    public_app.run(host=host, port=port, debug=False, threaded=True, ssl_context=ssl_context)
 
 
 def run_admin_server(host='127.0.0.1', port=5001):
@@ -527,13 +593,14 @@ def run_admin_server(host='127.0.0.1', port=5001):
 
 
 def run_both_servers(public_host='0.0.0.0', public_port=5000, 
-                     admin_host='127.0.0.1', admin_port=5001):
+                     admin_host='127.0.0.1', admin_port=5001,
+                     ssl_cert=None, ssl_key=None):
     """Run both public and admin servers in separate threads"""
     
     # Start public server in a thread
     public_thread = Thread(
         target=run_public_server,
-        args=(public_host, public_port),
+        args=(public_host, public_port, ssl_cert, ssl_key),
         daemon=True,
         name="public-server"
     )

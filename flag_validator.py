@@ -1,13 +1,15 @@
-"""
+"""""
 flag_validator.py
 
-Flag validation logic for CTF submissions.
+Flag generation and validation logic for CTF submissions.
+Each service on each team has one active flag at a time.
 """
 
 import logging
 import hashlib
+import secrets
 import time
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict
 
 from game_state import game_state
 
@@ -15,25 +17,55 @@ logger = logging.getLogger("flag_validator")
 
 
 class FlagValidator:
-    """Validates flag submissions"""
+    """Manages flag generation and validation"""
     
     def __init__(self):
-        # Store generated flags: flag_string -> (victim_team, timestamp)
-        self._active_flags = {}
-        self._flag_lifetime = 300  # 5 minutes
+        # Store active flags: (team_name, service_name) -> (flag_string, timestamp)
+        self._active_flags: Dict[tuple, tuple] = {}
+        # Reverse lookup: flag_string -> (team_name, service_name)
+        self._flag_lookup: Dict[str, tuple] = {}
     
-    def generate_flag(self, victim_team: str) -> str:
+    def generate_flag(self, team_name: str, service_name: str) -> Tuple[bool, str, str]:
         """
-        Generate a unique flag for a victim team.
-        """
-        timestamp = int(time.time())
-        data = f"{victim_team}:{timestamp}".encode()
-        flag_hash = hashlib.sha256(data).hexdigest()[:16]
-        flag = f"FLAG{{{flag_hash}}}"
+        Generate a unique flag for a team's service.
+        Replaces any existing flag for that team+service combination.
         
-        self._active_flags[flag] = (victim_team, timestamp)
-        logger.info("Generated flag %s for team %s", flag, victim_team)
-        return flag
+        Args:
+            team_name: Name of the team 
+            service_name: Name of the service requesting the flag
+            
+        Returns:
+            (success, flag_string, message)
+        """
+        # Verify team exists
+        if not game_state.get_team(team_name):
+            logger.warning("Flag generation requested for unknown team: %s", team_name)
+            return False, "", "Unknown team"
+        
+        # Generate a cryptographically secure random flag
+        random_data = secrets.token_hex(16)
+        timestamp = int(time.time())
+        
+        # Create flag in format: FLAG{team_service_randomhex}
+        flag = f"FLAG{{{team_name}_{service_name}_{random_data}}}"
+        
+        key = (team_name, service_name)
+        
+        # Remove old flag if it exists
+        if key in self._active_flags:
+            old_flag = self._active_flags[key][0]
+            if old_flag in self._flag_lookup:
+                del self._flag_lookup[old_flag]
+            logger.info("Replaced flag for %s/%s", team_name, service_name)
+        
+        # Store new flag
+        self._active_flags[key] = (flag, timestamp)
+        self._flag_lookup[flag] = (team_name, service_name)
+        
+        logger.info("Generated flag for team=%s service=%s: %s", 
+                   team_name, service_name, flag)
+        
+        return True, flag, "Flag generated successfully"
     
     def validate_submission(
         self, 
@@ -43,20 +75,24 @@ class FlagValidator:
         """
         Validate a flag submission.
         
+        Args:
+            attacker_team: Name of the team submitting the flag
+            flag: The flag string they captured
+            
         Returns:
             (is_valid, message, points_awarded)
         """
-        # Check if flag exists
-        if flag not in self._active_flags:
+        # Check if attacking team exists
+        if not game_state.get_team(attacker_team):
+            logger.info("Unknown team tried to submit flag: %s", attacker_team)
+            return False, "Unknown team", 0
+        
+        # Check if flag exists in our lookup
+        if flag not in self._flag_lookup:
             logger.info("Invalid flag submitted by %s: %s", attacker_team, flag)
-            return False, "Invalid flag", 0
+            return False, "Invalid or expired flag", 0
         
-        victim_team, flag_timestamp = self._active_flags[flag]
-        
-        # Check if flag has expired
-        if time.time() - flag_timestamp > self._flag_lifetime:
-            logger.info("Expired flag submitted by %s", attacker_team)
-            return False, "Flag has expired", 0
+        victim_team, service_name = self._flag_lookup[flag]
         
         # Check if team is attacking themselves
         if attacker_team == victim_team:
@@ -73,33 +109,53 @@ class FlagValidator:
             valid=True
         )
         
-        # Remove flag so it can't be resubmitted
-        del self._active_flags[flag]
+        # Remove the captured flag (it can only be submitted once)
+        key = (victim_team, service_name)
+        if key in self._active_flags:
+            del self._active_flags[key]
+        del self._flag_lookup[flag]
         
         logger.info(
-            "Valid flag submitted: %s captured flag from %s (+%d points)",
-            attacker_team, victim_team, points
+            "Valid flag submitted: %s captured %s's %s service (+%d points)",
+            attacker_team, victim_team, service_name, points
         )
         
-        return True, f"Valid flag! Captured from {victim_team}", points
-    
-    def cleanup_expired_flags(self):
-        """Remove expired flags from memory"""
-        current_time = time.time()
-        expired = [
-            flag for flag, (_, ts) in self._active_flags.items()
-            if current_time - ts > self._flag_lifetime
-        ]
-        
-        for flag in expired:
-            del self._active_flags[flag]
-        
-        if expired:
-            logger.info("Cleaned up %d expired flags", len(expired))
+        return True, f"Valid flag! Captured {victim_team}'s {service_name} service", points
     
     def get_active_flag_count(self) -> int:
         """Get count of active flags"""
         return len(self._active_flags)
+    
+    def get_team_flags(self, team_name: str) -> Dict[str, str]:
+        """
+        Get all active flags for a specific team (for debugging/admin).
+        Returns dict: service_name -> flag_string
+        """
+        result = {}
+        for (t_name, service), (flag, _) in self._active_flags.items():
+            if t_name == team_name:
+                result[service] = flag
+        return result
+    
+    def cleanup_old_flags(self, max_age_seconds: int = 3600):
+        """
+        Optional: Remove flags older than max_age (default 1 hour).
+        Useful for long-running games to prevent stale flags.
+        """
+        current_time = time.time()
+        to_remove = []
+        
+        for key, (flag, timestamp) in self._active_flags.items():
+            if current_time - timestamp > max_age_seconds:
+                to_remove.append((key, flag))
+        
+        for key, flag in to_remove:
+            del self._active_flags[key]
+            if flag in self._flag_lookup:
+                del self._flag_lookup[flag]
+        
+        if to_remove:
+            logger.info("Cleaned up %d old flags", len(to_remove))
 
 
 # Global flag validator instance

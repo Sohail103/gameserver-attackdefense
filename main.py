@@ -95,6 +95,16 @@ def main():
         help='Enable UDP port scanning (requires root)'
     )
     parser.add_argument(
+        '--ssl-cert',
+        type=str,
+        help='Path to SSL certificate file for HTTPS (e.g., cert.pem)'
+    )
+    parser.add_argument(
+        '--ssl-key',
+        type=str,
+        help='Path to SSL private key file for HTTPS (e.g., key.pem)'
+    )
+    parser.add_argument(
         '--debug',
         action='store_true',
         help='Enable debug mode'
@@ -155,7 +165,9 @@ def main():
             public_host=args.host,
             public_port=args.port,
             admin_host='127.0.0.1',
-            admin_port=args.admin_port
+            admin_port=args.admin_port,
+            ssl_cert=args.ssl_cert,
+            ssl_key=args.ssl_key
         )
     except KeyboardInterrupt:
         logger.info("\nShutdown requested by user")

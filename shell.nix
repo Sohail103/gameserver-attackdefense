@@ -12,6 +12,7 @@ pkgs.mkShell {
     pythonWithPackages
     pkgs.nmap
     pkgs.git
+    pkgs.openssl
   ];
   
   shellHook = ''
