@@ -12,7 +12,7 @@ from threading import Thread
 
 from game_state import game_state, GameStatus, Team
 from scanner import scanner
-from flag_validator import flag_validator
+from newflagvalidator import flag_validator
 
 logger = logging.getLogger("web_server")
 
@@ -446,6 +446,22 @@ def public_generate_flag():
         "message": "Flag generated successfully"
     }
     """
+    ip_addr = request.remote_addr
+    
+    # Find team by IP
+    requesting_team = None
+    for team in game_state.get_all_teams().values():
+        if team.ip == ip_addr:
+            requesting_team = team
+            break
+
+    if not requesting_team:
+        return jsonify({
+            "success": False,
+            "flag": "",
+            "message": "Your IP is not registered to a team."
+        }), 403
+
     data = request.get_json()
     
     if not data or 'team' not in data or 'service' not in data:
@@ -457,6 +473,18 @@ def public_generate_flag():
     
     team_name = data['team']
     service_name = data['service']
+
+    # Security check: ensure the request is for the team's own flag
+    if requesting_team.name != team_name:
+        logger.warning(
+            "IP %s for team %s tried to generate a flag for team %s",
+            ip_addr, requesting_team.name, team_name
+        )
+        return jsonify({
+            "success": False,
+            "flag": "",
+            "message": "You can only generate flags for your own team."
+        }), 403
     
     # Generate flag
     success, flag, message = flag_validator.generate_flag(team_name, service_name)
@@ -482,7 +510,6 @@ def public_submit_flag():
     
     Expected JSON body:
     {
-        "team": "team-alpha",
         "flag": "FLAG{...}"
     }
     
@@ -493,23 +520,25 @@ def public_submit_flag():
         "points": 50
     }
     """
-    data = request.get_json()
-    
-    if not data or 'team' not in data or 'flag' not in data:
+    logger.info("Received request to /api/submit_flag")
+    logger.info("Request headers: %s", request.headers)
+    logger.info("Request data: %s", request.get_data(as_text=True))
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"success": False, "message": "Invalid JSON data"}), 400
+    except Exception as e:
+        logger.error("Failed to decode JSON: %s", e)
+        return jsonify({"success": False, "message": "Invalid JSON format"}), 400
+
+    if 'flag' not in data:
         return jsonify({
             "success": False,
-            "message": "Missing 'team' or 'flag' field"
+            "message": "Missing 'flag' field"
         }), 400
     
-    team_name = data['team']
     flag = data['flag']
-    
-    # Check if team exists
-    if not game_state.get_team(team_name):
-        return jsonify({
-            "success": False,
-            "message": "Unknown team"
-        }), 400
+    ip_addr = request.remote_addr
     
     # Check if game is running
     if game_state.get_status() != GameStatus.RUNNING:
@@ -519,7 +548,7 @@ def public_submit_flag():
         }), 400
     
     # Validate flag
-    is_valid, message, points = flag_validator.validate_submission(team_name, flag)
+    is_valid, message, points = flag_validator.validate_submission(ip_addr, flag)
     
     return jsonify({
         "success": is_valid,

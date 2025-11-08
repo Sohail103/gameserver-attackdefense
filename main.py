@@ -11,12 +11,14 @@ import argparse
 
 from game_state import game_state, Team
 from web_server import run_both_servers
+from event_logger import initialize_logs
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
+
 
 logger = logging.getLogger("main")
 
@@ -25,23 +27,30 @@ def setup_teams():
     """Initialize teams - customize this for your CTF"""
     teams = [
         Team(
-            name="team-alpha",
-            ip="10.0.2.10",
-            expected_tcp_ports=[22, 80, 5000],
+            name="sohail",
+            ip="127.0.0.1",
+            expected_tcp_ports=[2222, 8081, 8001],
             expected_udp_ports=[],
             score=1000
         ),
         Team(
-            name="team-bravo",
-            ip="10.0.2.11",
-            expected_tcp_ports=[22, 7000, 8081],
+            name="narendhar",
+            ip="192.168.1.11",
+            expected_tcp_ports=[2222, 8081, 8001],
             expected_udp_ports=[],
             score=1000
         ),
         Team(
-            name="team-charlie",
-            ip="10.0.2.12",
-            expected_tcp_ports=[22, 3000, 8080],
+            name="dharun",
+            ip="192.168.1.12",
+            expected_tcp_ports=[2222, 8081, 8001],
+            expected_udp_ports=[],
+            score=1000
+        ),
+        Team(
+            name="sanwariya",
+            ip="192.168.1.13",
+            expected_tcp_ports=[2222, 8081, 8001],
             expected_udp_ports=[],
             score=1000
         ),
@@ -132,6 +141,9 @@ def main():
     logger.info("  Flag points: %d points", args.flag_points)
     logger.info("  UDP scanning: %s", "enabled" if args.enable_udp else "disabled")
     logger.info("=" * 60)
+    
+    # Initialize log files
+    initialize_logs()
     
     # Setup teams
     setup_teams()

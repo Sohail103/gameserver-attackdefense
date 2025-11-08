@@ -14,6 +14,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from typing import Dict, List
 
 from game_state import game_state, GameStatus
+from event_logger import log_service_down
 
 logger = logging.getLogger("scanner")
 
@@ -92,6 +93,18 @@ class ServiceScanner:
         missing_tcp = [p for p, state in tcp_results.items() if state != "open"]
         missing_udp = [p for p, state in udp_results.items() if state != "open"]
         
+        # Log each missing service
+        for port in missing_tcp:
+            log_service_down(
+                team_name, f"TCP/{port}", game_state.penalty_per_port, 
+                f"Port not open (state: {tcp_results.get(port, 'unknown')})"
+            )
+        for port in missing_udp:
+            log_service_down(
+                team_name, f"UDP/{port}", game_state.penalty_per_port,
+                f"Port not open (state: {udp_results.get(port, 'unknown')})"
+            )
+
         all_missing = missing_tcp + missing_udp
         penalty = len(all_missing) * game_state.penalty_per_port
         

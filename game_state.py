@@ -86,21 +86,21 @@ class GameState:
                     "score": team.score
                 })
     
-    def record_flag_submission(self, attacker: str, victim: str, flag: str, points: int, valid: bool):
+    def record_flag_submission(self, attacker: Team, victim: Team, flag: str, points: int, valid: bool):
         """Record a flag submission attempt"""
         with self._lock:
             self._flag_history.append({
                 "timestamp": time.time(),
-                "attacker": attacker,
-                "victim": victim,
+                "attacker": attacker.name,
+                "victim": victim.name,
                 "flag": flag,
                 "points": points,
                 "valid": valid
             })
             
-            if valid and attacker in self._teams:
-                self._teams[attacker].score += points
-                self._teams[attacker].flags_captured += 1
+            if valid:
+                attacker.score += points
+                attacker.flags_captured += 1
     
     def get_status(self) -> GameStatus:
         """Get current game status"""
