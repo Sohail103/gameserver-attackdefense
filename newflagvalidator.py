@@ -24,8 +24,8 @@ class FlagValidator:
         self._active_flags: Dict[tuple, tuple] = {}
         # Reverse lookup: flag_string -> (team_name, service_name)
         self._flag_lookup: Dict[str, tuple] = {}
-        # Track submissions to prevent duplicates per team/ip
-        # Structure: {ip_or_team: set_of_flags_submitted}
+        # Track submissions to prevent duplicates per team
+        # Structure: {team_name: set_of_flags_submitted}
         self._submissions: Dict[str, Set[str]] = {}
 
     def generate_flag(self, team_name: str, service_name: str) -> Tuple[bool, str, str]:
@@ -51,60 +51,60 @@ class FlagValidator:
         logger.info("Generated flag for team=%s service=%s: %s", team_name, service_name, flag)
         return True, flag, "Flag generated successfully"
 
-    def validate_submission(self, attacker_ip: str, flag: str) -> Tuple[bool, str, int]:
+    def validate_submission(self, attacker_token: str, flag: str) -> Tuple[bool, str, int]:
         """
         Validate a flag submission.
 
         Args:
-            attacker_ip: IP address of the team submitting the flag (used to infer team)
-            flag: The flag string they captured
-            
+            attacker_token: Secret token of the team submitting the flag.
+            flag: The flag string they captured.
+
         Returns:
             (is_valid, message, points_awarded)
         """
-        # Map IP to team
+        # Map token to team
         attacker_team = None
         for team in game_state.get_all_teams().values():
-            if team.ip == attacker_ip:
+            if team.token == attacker_token:
                 attacker_team = team
                 break
 
         if not attacker_team:
-            message = "Unknown team (IP not registered)"
-            logger.info("Unknown IP %s tried to submit flag %s", attacker_ip, flag)
-            log_flag_submission(attacker_ip, None, flag, message, is_valid=False)
+            message = "Invalid team token"
+            logger.warning("Invalid token '%s' used to submit flag '%s'", attacker_token, flag)
+            log_flag_submission(attacker_token, None, flag, message, is_valid=False)
             return False, message, 0
-        
+
         # Check if flag exists
         if flag not in self._flag_lookup:
             message = "Invalid or expired flag"
-            logger.info("Invalid flag submitted by %s (%s): %s", attacker_team, attacker_ip, flag)
-            log_flag_submission(attacker_ip, attacker_team, flag, message, is_valid=False)
+            logger.info("Invalid flag submitted by %s (%s): %s", attacker_team.name, attacker_team.ip, flag)
+            log_flag_submission(attacker_team.ip, attacker_team.name, flag, message, is_valid=False)
             return False, message, 0
-        
+
         victim_team_name, service_name = self._flag_lookup[flag]
         victim_team = game_state.get_team(victim_team_name)
 
         # Prevent self-submission
         if attacker_team == victim_team:
             message = "Cannot submit your own flag"
-            logger.info("Team %s (%s) tried to submit their own flag", attacker_team.name, attacker_ip)
-            log_flag_submission(attacker_ip, attacker_team.name, flag, message, is_valid=False)
+            logger.info("Team %s (%s) tried to submit their own flag", attacker_team.name, attacker_team.ip)
+            log_flag_submission(attacker_team.ip, attacker_team.name, flag, message, is_valid=False)
             return False, message, 0
-        
-        # Prevent duplicate submissions by same IP/team
-        if attacker_ip not in self._submissions:
-            self._submissions[attacker_ip] = set()
-        
-        if flag in self._submissions[attacker_ip]:
+
+        # Prevent duplicate submissions by the same team
+        if attacker_team.name not in self._submissions:
+            self._submissions[attacker_team.name] = set()
+
+        if flag in self._submissions[attacker_team.name]:
             message = "You have already submitted this flag"
-            logger.info("Duplicate flag submission blocked: %s (%s) tried %s again", attacker_team.name, attacker_ip, flag)
-            log_flag_submission(attacker_ip, attacker_team.name, flag, message, is_valid=False)
+            logger.info("Duplicate flag submission blocked: team %s tried %s again", attacker_team.name, flag)
+            log_flag_submission(attacker_team.ip, attacker_team.name, flag, message, is_valid=False)
             return False, message, 0
-        
+
         # Record successful submission
-        self._submissions[attacker_ip].add(flag)
-        
+        self._submissions[attacker_team.name].add(flag)
+
         points = game_state.flag_points
         game_state.record_flag_submission(
             attacker=attacker_team,
@@ -113,14 +113,14 @@ class FlagValidator:
             points=points,
             valid=True
         )
-        
+
         logger.info(
             "Valid flag submitted: %s (%s) captured %s's %s service (+%d points)",
-            attacker_team.name, attacker_ip, victim_team.name, service_name, points
+            attacker_team.name, attacker_team.ip, victim_team.name, service_name, points
         )
-        
+
         message = f"Valid flag! Captured {victim_team.name}'s {service_name} service"
-        log_flag_submission(attacker_ip, attacker_team.name, flag, message, is_valid=True)
+        log_flag_submission(attacker_team.ip, attacker_team.name, flag, message, is_valid=True)
         return True, message, points
 
     def get_active_flag_count(self) -> int:

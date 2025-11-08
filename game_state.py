@@ -23,6 +23,7 @@ class GameStatus(Enum):
 class Team:
     name: str
     ip: str
+    token: str
     expected_tcp_ports: List[int]
     expected_udp_ports: List[int] = field(default_factory=list)
     score: int = 1000
@@ -127,6 +128,7 @@ class GameState:
                     "rank": i + 1,
                     "name": t.name,
                     "ip": t.ip,
+                    "token": t.token,
                     "score": t.score,
                     "flags_captured": t.flags_captured,
                     "services_down": len(t.services_down),

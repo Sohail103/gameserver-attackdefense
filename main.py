@@ -8,6 +8,7 @@ Orchestrates all components.
 
 import logging
 import argparse
+import secrets
 
 from game_state import game_state, Team
 from web_server import run_both_servers
@@ -25,38 +26,23 @@ logger = logging.getLogger("main")
 
 def setup_teams():
     """Initialize teams - customize this for your CTF"""
-    teams = [
-        Team(
-            name="sohail",
-            ip="127.0.0.1",
-            expected_tcp_ports=[2222, 8081, 8001],
-            expected_udp_ports=[],
-            score=1000
-        ),
-        Team(
-            name="narendhar",
-            ip="192.168.1.11",
-            expected_tcp_ports=[2222, 8081, 8001],
-            expected_udp_ports=[],
-            score=1000
-        ),
-        Team(
-            name="dharun",
-            ip="192.168.1.12",
-            expected_tcp_ports=[2222, 8081, 8001],
-            expected_udp_ports=[],
-            score=1000
-        ),
-        Team(
-            name="sanwariya",
-            ip="192.168.1.13",
-            expected_tcp_ports=[2222, 8081, 8001],
-            expected_udp_ports=[],
-            score=1000
-        ),
+    team_data = [
+        {"name": "sohail", "ip": "127.0.0.1", "ports": [2222, 8081, 8001]},
+        {"name": "narendhar", "ip": "192.168.1.11", "ports": [2222, 8081, 8001]},
+        {"name": "dharun", "ip": "192.168.1.12", "ports": [2222, 8081, 8001]},
+        {"name": "sanwariya", "ip": "192.168.1.13", "ports": [2222, 8081, 8001]},
     ]
     
-    for team in teams:
+    for data in team_data:
+        # Generate a unique secret token for each team
+        token = f"token-{data['name']}-{secrets.token_hex(8)}"
+        team = Team(
+            name=data['name'],
+            ip=data['ip'],
+            token=token,
+            expected_tcp_ports=data['ports'],
+            score=1000
+        )
         game_state.add_team(team)
         logger.info("Added team: %s (%s)", team.name, team.ip)
 

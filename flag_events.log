@@ -1,4 +1,5 @@
-Flag submission log started at 2025-11-08T07:45:44.486446
+Flag submission log started at 2025-11-08T08:08:26.589447
 ==================================================
-[2025-11-08T07:46:07.585502] INVALID | Attacker IP: 172.17.225.219 | Team: Unknown | Flag: 'abcd' | Message: Unknown team (IP not registered)
-[2025-11-08T07:46:25.285790] INVALID | Attacker IP: 172.17.225.219 | Team: Unknown | Flag: 'abcd' | Message: Unknown team (IP not registered)
+[2025-11-08T08:13:41.086715] VALID | Attacker IP: 192.168.1.11 | Team: narendhar | Flag: 'FLAG{sohail_web-server_542b01696cbc7813e544a5eea9e51117}' | Message: Valid flag! Captured sohail's web-server service
+[2025-11-08T08:14:14.857086] VALID | Attacker IP: 192.168.1.13 | Team: sanwariya | Flag: 'FLAG{sohail_web-server_542b01696cbc7813e544a5eea9e51117}' | Message: Valid flag! Captured sohail's web-server service
+[2025-11-08T08:14:19.453440] INVALID | Attacker IP: 192.168.1.13 | Team: sanwariya | Flag: 'FLAG{sohail_web-server_542b01696cbc7813e544a5eea9e51117}' | Message: You have already submitted this flag

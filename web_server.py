@@ -184,6 +184,10 @@ PUBLIC_SCOREBOARD_TEMPLATE = """
                     </select>
                 </div>
                 <div class="form-group">
+                    <label for="token">Your Secret Token:</label>
+                    <input type="text" id="token" name="token" placeholder="token-teamname-..." required>
+                </div>
+                <div class="form-group">
                     <label for="flag">Flag:</label>
                     <input type="text" id="flag" name="flag" placeholder="FLAG{...}" required>
                 </div>
@@ -202,13 +206,14 @@ PUBLIC_SCOREBOARD_TEMPLATE = """
             e.preventDefault();
             
             const team = document.getElementById('team').value;
+            const token = document.getElementById('token').value;
             const flag = document.getElementById('flag').value;
             const messageDiv = document.getElementById('message');
             
             fetch('/api/submit_flag', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ team: team, flag: flag })
+                body: JSON.stringify({ team: team, token: token, flag: flag })
             })
             .then(r => r.json())
             .then(data => {
@@ -335,6 +340,7 @@ ADMIN_TEMPLATE = """
                     <th>Rank</th>
                     <th>Team</th>
                     <th>IP Address</th>
+                    <th>Token</th>
                     <th>Score</th>
                     <th>Flags</th>
                     <th>Services Down</th>
@@ -347,6 +353,7 @@ ADMIN_TEMPLATE = """
                     <td class="rank">#{{ team.rank }}</td>
                     <td>{{ team.name }}</td>
                     <td>{{ team.ip }}</td>
+                    <td>{{ team.token }}</td>
                     <td class="score">{{ team.score }}</td>
                     <td>{{ team.flags_captured }}</td>
                     <td>{{ team.services_down }}</td>
@@ -415,9 +422,10 @@ def public_index():
 def public_api_scoreboard():
     """JSON scoreboard endpoint (no IPs exposed)"""
     scoreboard = game_state.get_scoreboard()
-    # Remove IP addresses from public API
+    # Remove IP addresses and tokens from public API
     for team in scoreboard:
         team.pop('ip', None)
+        team.pop('token', None)
     
     return jsonify({
         "scoreboard": scoreboard,
@@ -531,14 +539,14 @@ def public_submit_flag():
         logger.error("Failed to decode JSON: %s", e)
         return jsonify({"success": False, "message": "Invalid JSON format"}), 400
 
-    if 'flag' not in data:
+    if 'flag' not in data or 'token' not in data:
         return jsonify({
             "success": False,
-            "message": "Missing 'flag' field"
+            "message": "Missing 'flag' or 'token' field"
         }), 400
     
     flag = data['flag']
-    ip_addr = request.remote_addr
+    token = data['token']
     
     # Check if game is running
     if game_state.get_status() != GameStatus.RUNNING:
@@ -548,7 +556,7 @@ def public_submit_flag():
         }), 400
     
     # Validate flag
-    is_valid, message, points = flag_validator.validate_submission(ip_addr, flag)
+    is_valid, message, points = flag_validator.validate_submission(token, flag)
     
     return jsonify({
         "success": is_valid,
