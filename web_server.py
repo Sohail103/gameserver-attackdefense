@@ -132,6 +132,34 @@ PUBLIC_SCOREBOARD_TEMPLATE = """
             background: #1a0000;
             color: #ff0000;
         }
+        .event-log {
+            max-width: 600px;
+            margin: 30px auto;
+            padding: 20px;
+            border: 2px solid #00ff00;
+            background: #001a00;
+        }
+        .event-log h2 {
+            margin-top: 0;
+            color: #00ff00;
+        }
+        .event-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .event-item {
+            padding: 8px 0;
+            border-bottom: 1px solid #003300;
+            color: #00cc00;
+        }
+        .event-item:last-child {
+            border-bottom: none;
+        }
+        .event-time {
+            color: #888;
+            margin-right: 10px;
+        }
     </style>
 </head>
 <body>
@@ -150,6 +178,7 @@ PUBLIC_SCOREBOARD_TEMPLATE = """
                 <tr>
                     <th>Rank</th>
                     <th>Team</th>
+                    <th>IP Address</th>
                     <th>Score</th>
                     <th>Flags</th>
                     <th>Services Down</th>
@@ -161,6 +190,7 @@ PUBLIC_SCOREBOARD_TEMPLATE = """
                 <tr>
                     <td class="rank">#{{ team.rank }}</td>
                     <td>{{ team.name }}</td>
+                    <td>{{ team.ip }}</td>
                     <td class="score">{{ team.score }}</td>
                     <td>{{ team.flags_captured }}</td>
                     <td>{{ team.services_down }}</td>
@@ -193,6 +223,13 @@ PUBLIC_SCOREBOARD_TEMPLATE = """
                 </div>
                 <button type="submit">Submit Flag</button>
             </form>
+        </div>
+
+        <div class="event-log">
+            <h2>📢 Event Log</h2>
+            <ul id="eventList" class="event-list">
+                <!-- Events will be dynamically inserted here -->
+            </ul>
         </div>
 
         <div class="info">
@@ -232,6 +269,46 @@ PUBLIC_SCOREBOARD_TEMPLATE = """
                 messageDiv.style.display = 'block';
             });
         });
+    </script>
+    <script>
+        function formatTime(unixTimestamp) {
+            const date = new Date(unixTimestamp * 1000);
+            const hours = date.getHours().toString().padStart(2, '0');
+            const minutes = date.getMinutes().toString().padStart(2, '0');
+            const seconds = date.getSeconds().toString().padStart(2, '0');
+            return `${hours}:${minutes}:${seconds}`;
+        }
+
+        function updateEventLog() {
+            const eventList = document.getElementById('eventList');
+            fetch('/api/events')
+                .then(r => r.json())
+                .then(events => {
+                    eventList.innerHTML = ''; // Clear old events
+                    if (events.length === 0) {
+                        eventList.innerHTML = '<li class="event-item">No events yet.</li>';
+                        return;
+                    }
+                    events.forEach(event => {
+                        const item = document.createElement('li');
+                        item.className = 'event-item';
+                        item.innerHTML = `
+                            <span class="event-time">[${formatTime(event.timestamp)}]</span>
+                            <strong>${event.attacker}</strong> captured <strong>${event.victim}</strong>'s flag!
+                            <span class="score">(+${event.points})</span>
+                        `;
+                        eventList.appendChild(item);
+                    });
+                })
+                .catch(err => {
+                    console.error("Error fetching events:", err);
+                    eventList.innerHTML = '<li class="event-item error">Could not load events.</li>';
+                });
+        }
+
+        // Update on page load and then every 10 seconds
+        updateEventLog();
+        setInterval(updateEventLog, 10000);
     </script>
 </body>
 </html>
@@ -422,9 +499,8 @@ def public_index():
 def public_api_scoreboard():
     """JSON scoreboard endpoint (no IPs exposed)"""
     scoreboard = game_state.get_scoreboard()
-    # Remove IP addresses and tokens from public API
+    # Remove tokens from public API
     for team in scoreboard:
-        team.pop('ip', None)
         team.pop('token', None)
     
     return jsonify({
@@ -434,6 +510,24 @@ def public_api_scoreboard():
             "start_time": game_state.get_game_info()["start_time"],
         }
     })
+
+
+@public_app.route('/api/events')
+def public_api_events():
+    """JSON endpoint for recent game events (valid flag captures)"""
+    events = game_state.get_recent_events()
+    # Sanitize events to only expose necessary info
+    sanitized_events = [
+        {
+            "timestamp": event["timestamp"],
+            "attacker": event["attacker"],
+            "victim": event["victim"],
+            "points": event["points"],
+        }
+        for event in events
+    ]
+    return jsonify(sanitized_events)
+
 
 
 @public_app.route('/api/generate_flag', methods=['POST'])

@@ -46,6 +46,7 @@ class GameState:
         # Configuration
         self.penalty_per_port = 10
         self.flag_points = 50
+        self.flag_stolen_penalty = 25
         self.scan_interval = 10
         self.enable_udp = False
     
@@ -102,6 +103,7 @@ class GameState:
             if valid:
                 attacker.score += points
                 attacker.flags_captured += 1
+                victim.score = max(0, victim.score - self.flag_stolen_penalty)
     
     def get_status(self) -> GameStatus:
         """Get current game status"""
@@ -147,6 +149,14 @@ class GameState:
                 "scan_count": len(self._scan_history),
                 "flag_submissions": len(self._flag_history)
             }
+
+    def get_recent_events(self, limit: int = 15) -> List[Dict]:
+        """Get the most recent valid flag captures."""
+        with self._lock:
+            # Filter for valid submissions and get a copy
+            valid_submissions = [event for event in self._flag_history if event["valid"]]
+            # Return the last `limit` events, reversed so newest is first
+            return valid_submissions[-limit:][::-1]
 
 
 # Global game state instance

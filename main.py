@@ -9,6 +9,7 @@ Orchestrates all components.
 import logging
 import argparse
 import secrets
+import json
 
 from game_state import game_state, Team
 from web_server import run_both_servers
@@ -25,15 +26,26 @@ logger = logging.getLogger("main")
 
 
 def setup_teams():
-    """Initialize teams - customize this for your CTF"""
-    team_data = [
-        {"name": "sohail", "ip": "127.0.0.1", "ports": [2222, 8081, 8001]},
-        {"name": "narendhar", "ip": "192.168.1.11", "ports": [2222, 8081, 8001]},
-        {"name": "dharun", "ip": "192.168.1.12", "ports": [2222, 8081, 8001]},
-        {"name": "sanwariya", "ip": "192.168.1.13", "ports": [2222, 8081, 8001]},
-    ]
-    
+    """Initialize teams from teams.json"""
+    try:
+        with open('teams.json', 'r') as f:
+            team_data = json.load(f)
+    except FileNotFoundError:
+        logger.error("FATAL: teams.json not found. Please create it.")
+        exit(1)
+    except json.JSONDecodeError:
+        logger.error("FATAL: teams.json is not valid JSON.")
+        exit(1)
+
+    if not isinstance(team_data, list):
+        logger.error("FATAL: teams.json should contain a list of team objects.")
+        exit(1)
+
     for data in team_data:
+        if not all(k in data for k in ['name', 'ip', 'ports']):
+            logger.warning("Skipping invalid team entry in teams.json: %s", data)
+            continue
+
         # Generate a unique secret token for each team
         token = f"token-{data['name']}-{secrets.token_hex(8)}"
         team = Team(
@@ -85,6 +97,12 @@ def main():
         help='Points awarded for valid flag (default: 50)'
     )
     parser.add_argument(
+        '--flag-stolen-penalty',
+        type=int,
+        default=25,
+        help='Penalty points for team that gets a flag stolen (default: 25)'
+    )
+    parser.add_argument(
         '--enable-udp',
         action='store_true',
         help='Enable UDP port scanning (requires root)'
@@ -111,6 +129,7 @@ def main():
     game_state.scan_interval = args.scan_interval
     game_state.penalty_per_port = args.penalty
     game_state.flag_points = args.flag_points
+    game_state.flag_stolen_penalty = args.flag_stolen_penalty
     game_state.enable_udp = args.enable_udp
     
     if args.debug:
@@ -124,7 +143,8 @@ def main():
     logger.info("  Admin Server: http://127.0.0.1:%d (localhost only)", args.admin_port)
     logger.info("  Scan Interval: %d seconds", args.scan_interval)
     logger.info("  Penalty per port: %d points", args.penalty)
-    logger.info("  Flag points: %d points", args.flag_points)
+    logger.info("  Flag capture points: %d points", args.flag_points)
+    logger.info("  Flag stolen penalty: %d points", args.flag_stolen_penalty)
     logger.info("  UDP scanning: %s", "enabled" if args.enable_udp else "disabled")
     logger.info("=" * 60)
     
