@@ -31,6 +31,7 @@ class Team:
     score: int = 1000
     flags_captured: int = 0
     services_down: List[int] = field(default_factory=list)
+    consecutive_failures: Dict[int, int] = field(default_factory=dict)
     last_scan: Optional[float] = None
     scanning_paused: bool = False
 
@@ -212,6 +213,17 @@ class GameState:
             if team_name not in self._teams:
                 raise ValueError(f"Team '{team_name}' not found.")
             del self._teams[team_name]
+        self.save_teams_to_json()
+
+    def reset_game_state(self):
+        """Reset the game to the initial state"""
+        with self._lock:
+            for team in self._teams.values():
+                team.score = 1000
+                team.scanning_paused = False
+                team.last_scan = None
+                team.services_down = []
+                team.consecutive_failures = {}
         self.save_teams_to_json()
 
 

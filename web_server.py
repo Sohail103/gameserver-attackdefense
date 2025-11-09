@@ -445,6 +445,7 @@ ADMIN_TEMPLATE = """
             <button onclick="controlGame('start')">▶️ Start Game</button>
             <button onclick="controlGame('pause')">⏸️ Pause Game</button>
             <button onclick="controlGame('stop')">⏹️ Stop Game</button>
+            <button onclick="controlGame('reset')">🔄 Reset Game</button>
             <button onclick="location.reload()">🔄 Refresh</button>
         </div>
 
@@ -492,6 +493,11 @@ ADMIN_TEMPLATE = """
 
     <script>
         function controlGame(action) {
+            if (action === 'reset') {
+                if (!confirm('Are you sure you want to reset the entire game state? This cannot be undone.')) {
+                    return;
+                }
+            }
             fetch('/api/control/' + action, { method: 'POST' })
                 .then(r => r.json())
                 .then(data => {
@@ -788,6 +794,10 @@ def admin_control_game(action):
         game_state.set_status(GameStatus.FINISHED)
         scanner.stop()
         return jsonify({"success": True, "message": "Game stopped"})
+    
+    elif action == 'reset':
+        game_state.reset_game_state()
+        return jsonify({"success": True, "message": "Game state has been reset."})
     
     else:
         return jsonify({"success": False, "message": "Unknown action"}), 400

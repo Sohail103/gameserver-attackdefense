@@ -96,21 +96,30 @@ class ServiceScanner:
         # Determine missing services
         missing_tcp = [p for p, state in tcp_results.items() if state != "open"]
         missing_udp = [p for p, state in udp_results.items() if state != "open"]
-        
-        # Log each missing service
-        for port in missing_tcp:
-            log_service_down(
-                team_name, f"TCP/{port}", game_state.penalty_per_port, 
-                f"Port not open (state: {tcp_results.get(port, 'unknown')})"
-            )
-        for port in missing_udp:
-            log_service_down(
-                team_name, f"UDP/{port}", game_state.penalty_per_port,
-                f"Port not open (state: {udp_results.get(port, 'unknown')})"
-            )
 
+        penalty = 0
+        all_expected_ports = team.expected_tcp_ports + team.expected_udp_ports
+
+        for port in all_expected_ports:
+            if port in missing_tcp or port in missing_udp:
+                # Increment failure count
+                team.consecutive_failures[port] = team.consecutive_failures.get(port, 0) + 1
+                # Only apply penalty after the first failure
+                if team.consecutive_failures[port] > 1:
+                    penalty += game_state.penalty_per_port
+                    log_service_down(
+                        team_name,
+                        f"TCP/{port}" if port in team.expected_tcp_ports else f"UDP/{port}",
+                        game_state.penalty_per_port,
+                        f"Port consecutively down (failures: {team.consecutive_failures[port]})"
+                    )
+            else:
+                # Reset failure count if service is back up
+                if team.consecutive_failures.get(port, 0) > 0:
+                    logger.info(f"Service {port} for team {team_name} is back up.")
+                team.consecutive_failures[port] = 0
+        
         all_missing = missing_tcp + missing_udp
-        penalty = len(all_missing) * game_state.penalty_per_port
         
         # Record results
         game_state.record_scan_result(team_name, all_missing, penalty)

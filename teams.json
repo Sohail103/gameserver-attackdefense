@@ -9,15 +9,12 @@
             8001
         ],
         "expected_udp_ports": [],
-        "score": 940,
+        "score": 1000,
         "flags_captured": 0,
-        "services_down": [
-            2222,
-            8081,
-            8001
-        ],
-        "last_scan": 1762652068.3567934,
-        "scanning_paused": true
+        "services_down": [],
+        "consecutive_failures": {},
+        "last_scan": null,
+        "scanning_paused": false
     },
     {
         "name": "narendhar",
@@ -29,14 +26,11 @@
             8001
         ],
         "expected_udp_ports": [],
-        "score": 940,
+        "score": 1000,
         "flags_captured": 0,
-        "services_down": [
-            2222,
-            8081,
-            8001
-        ],
-        "last_scan": 1762652071.8630133,
+        "services_down": [],
+        "consecutive_failures": {},
+        "last_scan": null,
         "scanning_paused": false
     },
     {
@@ -49,15 +43,12 @@
             8001
         ],
         "expected_udp_ports": [],
-        "score": 940,
+        "score": 1000,
         "flags_captured": 0,
-        "services_down": [
-            2222,
-            8081,
-            8001
-        ],
-        "last_scan": 1762652071.8650599,
-        "scanning_paused": true
+        "services_down": [],
+        "consecutive_failures": {},
+        "last_scan": null,
+        "scanning_paused": false
     },
     {
         "name": "abcd",
@@ -69,14 +60,11 @@
             9000
         ],
         "expected_udp_ports": [],
-        "score": 940,
+        "score": 1000,
         "flags_captured": 0,
-        "services_down": [
-            2222,
-            8081,
-            9000
-        ],
-        "last_scan": 1762652068.8661373,
+        "services_down": [],
+        "consecutive_failures": {},
+        "last_scan": null,
         "scanning_paused": false
     }
 ]

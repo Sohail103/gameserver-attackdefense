@@ -1,2 +1,5 @@
-Flag submission log started at 2025-11-09T07:03:12.178330
+Flag submission log started at 2025-11-09T08:10:01.718459
 ==================================================
+[2025-11-09T08:12:22.811163] VALID | Attacker IP: 192.168.1.11 | Team: narendhar | Flag: 'FLAG{sohail_web-server_1549a0c169767bef035064be7bb3369e}' | Message: Valid flag! Captured sohail's web-server service
+[2025-11-09T08:12:45.694317] INVALID | Attacker IP: 192.168.1.11 | Team: narendhar | Flag: 'FLAG{team-bravo_sqlinjection_9414936810d3f6591612e9aebf433b0f}' | Message: Invalid or expired flag
+[2025-11-09T08:12:51.279694] INVALID | Attacker IP: 192.168.1.11 | Team: narendhar | Flag: 'FLAG{sohail_web-server_940a4a03ac4a8f43f2de1ad013558499}' | Message: Invalid or expired flag
