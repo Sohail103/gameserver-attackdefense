@@ -27,36 +27,7 @@ logger = logging.getLogger("main")
 
 def setup_teams():
     """Initialize teams from teams.json"""
-    try:
-        with open('teams.json', 'r') as f:
-            team_data = json.load(f)
-    except FileNotFoundError:
-        logger.error("FATAL: teams.json not found. Please create it.")
-        exit(1)
-    except json.JSONDecodeError:
-        logger.error("FATAL: teams.json is not valid JSON.")
-        exit(1)
-
-    if not isinstance(team_data, list):
-        logger.error("FATAL: teams.json should contain a list of team objects.")
-        exit(1)
-
-    for data in team_data:
-        if not all(k in data for k in ['name', 'ip', 'ports']):
-            logger.warning("Skipping invalid team entry in teams.json: %s", data)
-            continue
-
-        # Generate a unique secret token for each team
-        token = f"token-{data['name']}-{secrets.token_hex(8)}"
-        team = Team(
-            name=data['name'],
-            ip=data['ip'],
-            token=token,
-            expected_tcp_ports=data['ports'],
-            score=1000
-        )
-        game_state.add_team(team)
-        logger.info("Added team: %s (%s)", team.name, team.ip)
+    game_state.load_teams_from_json()
 
 
 def main():

@@ -83,6 +83,10 @@ class ServiceScanner:
     
     def _check_team(self, team_name: str, team):
         """Check a single team's services"""
+        if team.scanning_paused:
+            logger.info("Scanning is paused for team %s, skipping", team_name)
+            return
+
         tcp_results = self._run_nmap(team.ip, team.expected_tcp_ports, udp=False)
         udp_results = {}
         

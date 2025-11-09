@@ -2,21 +2,81 @@
     {
         "name": "sohail",
         "ip": "127.0.0.1",
-        "ports": [2222, 8081, 8001]
+        "token": "token-sohail-8e1d480ab85d59a2",
+        "expected_tcp_ports": [
+            2222,
+            8081,
+            8001
+        ],
+        "expected_udp_ports": [],
+        "score": 940,
+        "flags_captured": 0,
+        "services_down": [
+            2222,
+            8081,
+            8001
+        ],
+        "last_scan": 1762652068.3567934,
+        "scanning_paused": true
     },
     {
         "name": "narendhar",
         "ip": "192.168.1.11",
-        "ports": [2222, 8081, 8001]
+        "token": "token-narendhar-5d962e1d3951f5e7",
+        "expected_tcp_ports": [
+            2222,
+            8081,
+            8001
+        ],
+        "expected_udp_ports": [],
+        "score": 940,
+        "flags_captured": 0,
+        "services_down": [
+            2222,
+            8081,
+            8001
+        ],
+        "last_scan": 1762652071.8630133,
+        "scanning_paused": false
     },
     {
         "name": "dharun",
         "ip": "192.168.1.12",
-        "ports": [2222, 8081, 8001]
+        "token": "token-dharun-6c3abbdc26e246de",
+        "expected_tcp_ports": [
+            2222,
+            8081,
+            8001
+        ],
+        "expected_udp_ports": [],
+        "score": 940,
+        "flags_captured": 0,
+        "services_down": [
+            2222,
+            8081,
+            8001
+        ],
+        "last_scan": 1762652071.8650599,
+        "scanning_paused": true
     },
     {
-        "name": "sanwariya",
-        "ip": "192.168.1.13",
-        "ports": [2222, 8081, 8001]
+        "name": "abcd",
+        "ip": "192,168..1.14",
+        "token": "token-abcd-35a331f24b5d6cfa",
+        "expected_tcp_ports": [
+            2222,
+            8081,
+            9000
+        ],
+        "expected_udp_ports": [],
+        "score": 940,
+        "flags_captured": 0,
+        "services_down": [
+            2222,
+            8081,
+            9000
+        ],
+        "last_scan": 1762652068.8661373,
+        "scanning_paused": false
     }
 ]

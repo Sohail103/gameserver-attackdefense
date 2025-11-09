@@ -7,6 +7,7 @@ Flask web servers for CTF game interface.
 """
 
 import logging
+import secrets
 from flask import Flask, render_template_string, request, jsonify
 from threading import Thread
 
@@ -452,6 +453,41 @@ ADMIN_TEMPLATE = """
             Scans: {{ game_info.scan_count }} | 
             Flags Submitted: {{ game_info.flag_submissions }}
         </div>
+
+        <div class="team-management">
+            <h2>Team Management</h2>
+            <form id="addTeamForm">
+                <input type="text" id="teamName" placeholder="Team Name" required>
+                <input type="text" id="teamIP" placeholder="IP Address" required>
+                <input type="text" id="teamPorts" placeholder="Ports (comma-separated)" required>
+                <button type="submit">Add Team</button>
+            </form>
+            <table id="teamsTable">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>IP</th>
+                        <th>Ports</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for team in scoreboard %}
+                    <tr>
+                        <td>{{ team.name }}</td>
+                        <td>{{ team.ip }}</td>
+                        <td>{{ team.expected_tcp_ports | join(', ') }}</td>
+                        <td>
+                            <button onclick="deleteTeam('{{ team.name }}')">Delete</button>
+                            <button onclick="toggleScan('{{ team.name }}', {{ team.scanning_paused | tojson }})">
+                                {{ 'Resume Scan' if team.scanning_paused else 'Pause Scan' }}
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
 
     <script>
@@ -464,6 +500,56 @@ ADMIN_TEMPLATE = """
                 })
                 .catch(err => alert('Error: ' + err));
         }
+
+        function deleteTeam(teamName) {
+            if (!confirm('Are you sure you want to delete ' + teamName + '?')) return;
+            fetch('/api/teams/' + teamName, { method: 'DELETE' })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        location.reload();
+                    } else {
+                        alert('Error: ' + data.message);
+                    }
+                })
+                .catch(err => alert('Error: ' + err));
+        }
+
+        function toggleScan(teamName, isPaused) {
+            const action = isPaused ? 'resume_scan' : 'pause_scan';
+            fetch('/api/teams/' + teamName + '/' + action, { method: 'POST' })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        location.reload();
+                    } else {
+                        alert('Error: ' + data.message);
+                    }
+                })
+                .catch(err => alert('Error: ' + err));
+        }
+
+        document.getElementById('addTeamForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const name = document.getElementById('teamName').value;
+            const ip = document.getElementById('teamIP').value;
+            const ports = document.getElementById('teamPorts').value.split(',').map(p => parseInt(p.trim()));
+            
+            fetch('/api/teams', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, ip, expected_tcp_ports: ports })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    location.reload();
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            })
+            .catch(err => alert('Error: ' + err));
+        });
     </script>
 </body>
 </html>
@@ -705,6 +791,50 @@ def admin_control_game(action):
     
     else:
         return jsonify({"success": False, "message": "Unknown action"}), 400
+
+@admin_app.route('/api/teams', methods=['POST'])
+def admin_add_team():
+    """Add a new team"""
+    data = request.get_json()
+    if not data or 'name' not in data or 'ip' not in data or 'expected_tcp_ports' not in data:
+        return jsonify({"success": False, "message": "Missing required fields"}), 400
+    
+    try:
+        team = Team(
+            name=data['name'],
+            ip=data['ip'],
+            token=f"token-{data['name']}-{secrets.token_hex(8)}",
+            expected_tcp_ports=data['expected_tcp_ports']
+        )
+        game_state.add_team(team)
+        return jsonify({"success": True, "message": "Team added successfully"})
+    except ValueError as e:
+        return jsonify({"success": False, "message": str(e)}), 400
+
+@admin_app.route('/api/teams/<team_name>', methods=['DELETE'])
+def admin_delete_team(team_name):
+    """Delete a team"""
+    try:
+        game_state.delete_team(team_name)
+        return jsonify({"success": True, "message": "Team deleted successfully"})
+    except ValueError as e:
+        return jsonify({"success": False, "message": str(e)}), 400
+
+@admin_app.route('/api/teams/<team_name>/<action>', methods=['POST'])
+def admin_team_action(team_name, action):
+    """Pause or resume scanning for a team"""
+    try:
+        if action == 'pause_scan':
+            game_state.update_team(team_name, {'scanning_paused': True})
+            return jsonify({"success": True, "message": "Scanning paused for " + team_name})
+        elif action == 'resume_scan':
+            game_state.update_team(team_name, {'scanning_paused': False})
+            return jsonify({"success": True, "message": "Scanning resumed for " + team_name})
+        else:
+            return jsonify({"success": False, "message": "Unknown action"}), 400
+    except ValueError as e:
+        return jsonify({"success": False, "message": str(e)}), 400
+
 
 
 def run_public_server(host='0.0.0.0', port=5000, ssl_cert=None, ssl_key=None):
