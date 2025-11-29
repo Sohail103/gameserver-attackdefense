@@ -14,6 +14,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from typing import Dict, List
 
 from game_state import game_state, GameStatus
+from event_logger import log_service_down
 
 logger = logging.getLogger("scanner")
 
@@ -82,6 +83,10 @@ class ServiceScanner:
     
     def _check_team(self, team_name: str, team):
         """Check a single team's services"""
+        if team.scanning_paused:
+            logger.info("Scanning is paused for team %s, skipping", team_name)
+            return
+
         tcp_results = self._run_nmap(team.ip, team.expected_tcp_ports, udp=False)
         udp_results = {}
         
@@ -91,9 +96,30 @@ class ServiceScanner:
         # Determine missing services
         missing_tcp = [p for p, state in tcp_results.items() if state != "open"]
         missing_udp = [p for p, state in udp_results.items() if state != "open"]
+
+        penalty = 0
+        all_expected_ports = team.expected_tcp_ports + team.expected_udp_ports
+
+        for port in all_expected_ports:
+            if port in missing_tcp or port in missing_udp:
+                # Increment failure count
+                team.consecutive_failures[port] = team.consecutive_failures.get(port, 0) + 1
+                # Only apply penalty after the first failure
+                if team.consecutive_failures[port] > 1:
+                    penalty += game_state.penalty_per_port
+                    log_service_down(
+                        team_name,
+                        f"TCP/{port}" if port in team.expected_tcp_ports else f"UDP/{port}",
+                        game_state.penalty_per_port,
+                        f"Port consecutively down (failures: {team.consecutive_failures[port]})"
+                    )
+            else:
+                # Reset failure count if service is back up
+                if team.consecutive_failures.get(port, 0) > 0:
+                    logger.info(f"Service {port} for team {team_name} is back up.")
+                team.consecutive_failures[port] = 0
         
         all_missing = missing_tcp + missing_udp
-        penalty = len(all_missing) * game_state.penalty_per_port
         
         # Record results
         game_state.record_scan_result(team_name, all_missing, penalty)

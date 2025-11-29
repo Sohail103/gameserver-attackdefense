@@ -7,12 +7,13 @@ Flask web servers for CTF game interface.
 """
 
 import logging
+import secrets
 from flask import Flask, render_template_string, request, jsonify
 from threading import Thread
 
 from game_state import game_state, GameStatus, Team
 from scanner import scanner
-from flag_validator import flag_validator
+from newflagvalidator import flag_validator
 
 logger = logging.getLogger("web_server")
 
@@ -132,6 +133,34 @@ PUBLIC_SCOREBOARD_TEMPLATE = """
             background: #1a0000;
             color: #ff0000;
         }
+        .event-log {
+            max-width: 600px;
+            margin: 30px auto;
+            padding: 20px;
+            border: 2px solid #00ff00;
+            background: #001a00;
+        }
+        .event-log h2 {
+            margin-top: 0;
+            color: #00ff00;
+        }
+        .event-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .event-item {
+            padding: 8px 0;
+            border-bottom: 1px solid #003300;
+            color: #00cc00;
+        }
+        .event-item:last-child {
+            border-bottom: none;
+        }
+        .event-time {
+            color: #888;
+            margin-right: 10px;
+        }
     </style>
 </head>
 <body>
@@ -150,6 +179,7 @@ PUBLIC_SCOREBOARD_TEMPLATE = """
                 <tr>
                     <th>Rank</th>
                     <th>Team</th>
+                    <th>IP Address</th>
                     <th>Score</th>
                     <th>Flags</th>
                     <th>Services Down</th>
@@ -161,6 +191,7 @@ PUBLIC_SCOREBOARD_TEMPLATE = """
                 <tr>
                     <td class="rank">#{{ team.rank }}</td>
                     <td>{{ team.name }}</td>
+                    <td>{{ team.ip }}</td>
                     <td class="score">{{ team.score }}</td>
                     <td>{{ team.flags_captured }}</td>
                     <td>{{ team.services_down }}</td>
@@ -184,11 +215,22 @@ PUBLIC_SCOREBOARD_TEMPLATE = """
                     </select>
                 </div>
                 <div class="form-group">
+                    <label for="token">Your Secret Token:</label>
+                    <input type="text" id="token" name="token" placeholder="token-teamname-..." required>
+                </div>
+                <div class="form-group">
                     <label for="flag">Flag:</label>
                     <input type="text" id="flag" name="flag" placeholder="FLAG{...}" required>
                 </div>
                 <button type="submit">Submit Flag</button>
             </form>
+        </div>
+
+        <div class="event-log">
+            <h2>📢 Event Log</h2>
+            <ul id="eventList" class="event-list">
+                <!-- Events will be dynamically inserted here -->
+            </ul>
         </div>
 
         <div class="info">
@@ -202,13 +244,14 @@ PUBLIC_SCOREBOARD_TEMPLATE = """
             e.preventDefault();
             
             const team = document.getElementById('team').value;
+            const token = document.getElementById('token').value;
             const flag = document.getElementById('flag').value;
             const messageDiv = document.getElementById('message');
             
             fetch('/api/submit_flag', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ team: team, flag: flag })
+                body: JSON.stringify({ team: team, token: token, flag: flag })
             })
             .then(r => r.json())
             .then(data => {
@@ -227,6 +270,46 @@ PUBLIC_SCOREBOARD_TEMPLATE = """
                 messageDiv.style.display = 'block';
             });
         });
+    </script>
+    <script>
+        function formatTime(unixTimestamp) {
+            const date = new Date(unixTimestamp * 1000);
+            const hours = date.getHours().toString().padStart(2, '0');
+            const minutes = date.getMinutes().toString().padStart(2, '0');
+            const seconds = date.getSeconds().toString().padStart(2, '0');
+            return `${hours}:${minutes}:${seconds}`;
+        }
+
+        function updateEventLog() {
+            const eventList = document.getElementById('eventList');
+            fetch('/api/events')
+                .then(r => r.json())
+                .then(events => {
+                    eventList.innerHTML = ''; // Clear old events
+                    if (events.length === 0) {
+                        eventList.innerHTML = '<li class="event-item">No events yet.</li>';
+                        return;
+                    }
+                    events.forEach(event => {
+                        const item = document.createElement('li');
+                        item.className = 'event-item';
+                        item.innerHTML = `
+                            <span class="event-time">[${formatTime(event.timestamp)}]</span>
+                            <strong>${event.attacker}</strong> captured <strong>${event.victim}</strong>'s flag!
+                            <span class="score">(+${event.points})</span>
+                        `;
+                        eventList.appendChild(item);
+                    });
+                })
+                .catch(err => {
+                    console.error("Error fetching events:", err);
+                    eventList.innerHTML = '<li class="event-item error">Could not load events.</li>';
+                });
+        }
+
+        // Update on page load and then every 10 seconds
+        updateEventLog();
+        setInterval(updateEventLog, 10000);
     </script>
 </body>
 </html>
@@ -335,6 +418,7 @@ ADMIN_TEMPLATE = """
                     <th>Rank</th>
                     <th>Team</th>
                     <th>IP Address</th>
+                    <th>Token</th>
                     <th>Score</th>
                     <th>Flags</th>
                     <th>Services Down</th>
@@ -347,6 +431,7 @@ ADMIN_TEMPLATE = """
                     <td class="rank">#{{ team.rank }}</td>
                     <td>{{ team.name }}</td>
                     <td>{{ team.ip }}</td>
+                    <td>{{ team.token }}</td>
                     <td class="score">{{ team.score }}</td>
                     <td>{{ team.flags_captured }}</td>
                     <td>{{ team.services_down }}</td>
@@ -360,6 +445,7 @@ ADMIN_TEMPLATE = """
             <button onclick="controlGame('start')">▶️ Start Game</button>
             <button onclick="controlGame('pause')">⏸️ Pause Game</button>
             <button onclick="controlGame('stop')">⏹️ Stop Game</button>
+            <button onclick="controlGame('reset')">🔄 Reset Game</button>
             <button onclick="location.reload()">🔄 Refresh</button>
         </div>
 
@@ -368,10 +454,50 @@ ADMIN_TEMPLATE = """
             Scans: {{ game_info.scan_count }} | 
             Flags Submitted: {{ game_info.flag_submissions }}
         </div>
+
+        <div class="team-management">
+            <h2>Team Management</h2>
+            <form id="addTeamForm">
+                <input type="text" id="teamName" placeholder="Team Name" required>
+                <input type="text" id="teamIP" placeholder="IP Address" required>
+                <input type="text" id="teamPorts" placeholder="Ports (comma-separated)" required>
+                <button type="submit">Add Team</button>
+            </form>
+            <table id="teamsTable">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>IP</th>
+                        <th>Ports</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for team in scoreboard %}
+                    <tr>
+                        <td>{{ team.name }}</td>
+                        <td>{{ team.ip }}</td>
+                        <td>{{ team.expected_tcp_ports | join(', ') }}</td>
+                        <td>
+                            <button onclick="deleteTeam('{{ team.name }}')">Delete</button>
+                            <button onclick="toggleScan('{{ team.name }}', {{ team.scanning_paused | tojson }})">
+                                {{ 'Resume Scan' if team.scanning_paused else 'Pause Scan' }}
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
 
     <script>
         function controlGame(action) {
+            if (action === 'reset') {
+                if (!confirm('Are you sure you want to reset the entire game state? This cannot be undone.')) {
+                    return;
+                }
+            }
             fetch('/api/control/' + action, { method: 'POST' })
                 .then(r => r.json())
                 .then(data => {
@@ -380,6 +506,56 @@ ADMIN_TEMPLATE = """
                 })
                 .catch(err => alert('Error: ' + err));
         }
+
+        function deleteTeam(teamName) {
+            if (!confirm('Are you sure you want to delete ' + teamName + '?')) return;
+            fetch('/api/teams/' + teamName, { method: 'DELETE' })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        location.reload();
+                    } else {
+                        alert('Error: ' + data.message);
+                    }
+                })
+                .catch(err => alert('Error: ' + err));
+        }
+
+        function toggleScan(teamName, isPaused) {
+            const action = isPaused ? 'resume_scan' : 'pause_scan';
+            fetch('/api/teams/' + teamName + '/' + action, { method: 'POST' })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        location.reload();
+                    } else {
+                        alert('Error: ' + data.message);
+                    }
+                })
+                .catch(err => alert('Error: ' + err));
+        }
+
+        document.getElementById('addTeamForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const name = document.getElementById('teamName').value;
+            const ip = document.getElementById('teamIP').value;
+            const ports = document.getElementById('teamPorts').value.split(',').map(p => parseInt(p.trim()));
+            
+            fetch('/api/teams', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, ip, expected_tcp_ports: ports })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    location.reload();
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            })
+            .catch(err => alert('Error: ' + err));
+        });
     </script>
 </body>
 </html>
@@ -415,9 +591,9 @@ def public_index():
 def public_api_scoreboard():
     """JSON scoreboard endpoint (no IPs exposed)"""
     scoreboard = game_state.get_scoreboard()
-    # Remove IP addresses from public API
+    # Remove tokens from public API
     for team in scoreboard:
-        team.pop('ip', None)
+        team.pop('token', None)
     
     return jsonify({
         "scoreboard": scoreboard,
@@ -426,6 +602,24 @@ def public_api_scoreboard():
             "start_time": game_state.get_game_info()["start_time"],
         }
     })
+
+
+@public_app.route('/api/events')
+def public_api_events():
+    """JSON endpoint for recent game events (valid flag captures)"""
+    events = game_state.get_recent_events()
+    # Sanitize events to only expose necessary info
+    sanitized_events = [
+        {
+            "timestamp": event["timestamp"],
+            "attacker": event["attacker"],
+            "victim": event["victim"],
+            "points": event["points"],
+        }
+        for event in events
+    ]
+    return jsonify(sanitized_events)
+
 
 
 @public_app.route('/api/generate_flag', methods=['POST'])
@@ -446,6 +640,22 @@ def public_generate_flag():
         "message": "Flag generated successfully"
     }
     """
+    ip_addr = request.remote_addr
+    
+    # Find team by IP
+    requesting_team = None
+    for team in game_state.get_all_teams().values():
+        if team.ip == ip_addr:
+            requesting_team = team
+            break
+
+    if not requesting_team:
+        return jsonify({
+            "success": False,
+            "flag": "",
+            "message": "Your IP is not registered to a team."
+        }), 403
+
     data = request.get_json()
     
     if not data or 'team' not in data or 'service' not in data:
@@ -457,6 +667,18 @@ def public_generate_flag():
     
     team_name = data['team']
     service_name = data['service']
+
+    # Security check: ensure the request is for the team's own flag
+    if requesting_team.name != team_name:
+        logger.warning(
+            "IP %s for team %s tried to generate a flag for team %s",
+            ip_addr, requesting_team.name, team_name
+        )
+        return jsonify({
+            "success": False,
+            "flag": "",
+            "message": "You can only generate flags for your own team."
+        }), 403
     
     # Generate flag
     success, flag, message = flag_validator.generate_flag(team_name, service_name)
@@ -482,7 +704,6 @@ def public_submit_flag():
     
     Expected JSON body:
     {
-        "team": "team-alpha",
         "flag": "FLAG{...}"
     }
     
@@ -493,23 +714,25 @@ def public_submit_flag():
         "points": 50
     }
     """
-    data = request.get_json()
-    
-    if not data or 'team' not in data or 'flag' not in data:
+    logger.info("Received request to /api/submit_flag")
+    logger.info("Request headers: %s", request.headers)
+    logger.info("Request data: %s", request.get_data(as_text=True))
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"success": False, "message": "Invalid JSON data"}), 400
+    except Exception as e:
+        logger.error("Failed to decode JSON: %s", e)
+        return jsonify({"success": False, "message": "Invalid JSON format"}), 400
+
+    if 'flag' not in data or 'token' not in data:
         return jsonify({
             "success": False,
-            "message": "Missing 'team' or 'flag' field"
+            "message": "Missing 'flag' or 'token' field"
         }), 400
     
-    team_name = data['team']
     flag = data['flag']
-    
-    # Check if team exists
-    if not game_state.get_team(team_name):
-        return jsonify({
-            "success": False,
-            "message": "Unknown team"
-        }), 400
+    token = data['token']
     
     # Check if game is running
     if game_state.get_status() != GameStatus.RUNNING:
@@ -519,7 +742,7 @@ def public_submit_flag():
         }), 400
     
     # Validate flag
-    is_valid, message, points = flag_validator.validate_submission(team_name, flag)
+    is_valid, message, points = flag_validator.validate_submission(token, flag)
     
     return jsonify({
         "success": is_valid,
@@ -572,8 +795,56 @@ def admin_control_game(action):
         scanner.stop()
         return jsonify({"success": True, "message": "Game stopped"})
     
+    elif action == 'reset':
+        game_state.reset_game_state()
+        return jsonify({"success": True, "message": "Game state has been reset."})
+    
     else:
         return jsonify({"success": False, "message": "Unknown action"}), 400
+
+@admin_app.route('/api/teams', methods=['POST'])
+def admin_add_team():
+    """Add a new team"""
+    data = request.get_json()
+    if not data or 'name' not in data or 'ip' not in data or 'expected_tcp_ports' not in data:
+        return jsonify({"success": False, "message": "Missing required fields"}), 400
+    
+    try:
+        team = Team(
+            name=data['name'],
+            ip=data['ip'],
+            token=f"token-{data['name']}-{secrets.token_hex(8)}",
+            expected_tcp_ports=data['expected_tcp_ports']
+        )
+        game_state.add_team(team)
+        return jsonify({"success": True, "message": "Team added successfully"})
+    except ValueError as e:
+        return jsonify({"success": False, "message": str(e)}), 400
+
+@admin_app.route('/api/teams/<team_name>', methods=['DELETE'])
+def admin_delete_team(team_name):
+    """Delete a team"""
+    try:
+        game_state.delete_team(team_name)
+        return jsonify({"success": True, "message": "Team deleted successfully"})
+    except ValueError as e:
+        return jsonify({"success": False, "message": str(e)}), 400
+
+@admin_app.route('/api/teams/<team_name>/<action>', methods=['POST'])
+def admin_team_action(team_name, action):
+    """Pause or resume scanning for a team"""
+    try:
+        if action == 'pause_scan':
+            game_state.update_team(team_name, {'scanning_paused': True})
+            return jsonify({"success": True, "message": "Scanning paused for " + team_name})
+        elif action == 'resume_scan':
+            game_state.update_team(team_name, {'scanning_paused': False})
+            return jsonify({"success": True, "message": "Scanning resumed for " + team_name})
+        else:
+            return jsonify({"success": False, "message": "Unknown action"}), 400
+    except ValueError as e:
+        return jsonify({"success": False, "message": str(e)}), 400
+
 
 
 def run_public_server(host='0.0.0.0', port=5000, ssl_cert=None, ssl_key=None):

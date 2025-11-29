@@ -1,0 +1,84 @@
+{
+    "teams": [
+        {
+            "name": "sohail",
+            "ip": "127.0.0.1",
+            "token": "token-sohail-8e1d480ab85d59a2",
+            "expected_tcp_ports": [
+                2222,
+                8081,
+                8001
+            ],
+            "score": 1000,
+            "flags_captured": 0,
+            "services_down": [
+                2222,
+                8081,
+                8001
+            ],
+            "consecutive_failures": {},
+            "last_scan": 1762652350.606272,
+            "scanning_paused": false
+        },
+        {
+            "name": "narendhar",
+            "ip": "192.168.1.11",
+            "token": "token-narendhar-5d962e1d3951f5e7",
+            "expected_tcp_ports": [
+                2222,
+                8081,
+                8001
+            ],
+            "score": 1000,
+            "flags_captured": 0,
+            "services_down": [
+                2222,
+                8081,
+                8001
+            ],
+            "consecutive_failures": {},
+            "last_scan": 1762652071.8630133,
+            "scanning_paused": false
+        },
+        {
+            "name": "dharun",
+            "ip": "192.168.1.12",
+            "token": "token-dharun-6c3abbdc26e246de",
+            "expected_tcp_ports": [
+                2222,
+                8081,
+                8001
+            ],
+            "score": 1000,
+            "flags_captured": 0,
+            "services_down": [
+                2222,
+                8081,
+                8001
+            ],
+            "consecutive_failures": {},
+            "last_scan": 1762652354.1117074,
+            "scanning_paused": false
+        },
+        {
+            "name": "efgh",
+            "ip": "192.168.1.1",
+            "token": "token-efgh-7822eae7289a7001",
+            "expected_tcp_ports": [
+                12,
+                13,
+                14
+            ],
+            "score": 1000,
+            "flags_captured": 0,
+            "services_down": [],
+            "consecutive_failures": {},
+            "last_scan": null,
+            "scanning_paused": false
+        }
+    ],
+    "status": "running",
+    "game_start_time": 1762655469.934248,
+    "scan_history": [],
+    "flag_history": []
+}

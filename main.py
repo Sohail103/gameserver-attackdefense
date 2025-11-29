@@ -8,9 +8,12 @@ Orchestrates all components.
 
 import logging
 import argparse
+import secrets
+import json
 
 from game_state import game_state, Team
 from web_server import run_both_servers
+from event_logger import initialize_logs
 
 # Configure logging
 logging.basicConfig(
@@ -18,38 +21,13 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 
+
 logger = logging.getLogger("main")
 
 
 def setup_teams():
-    """Initialize teams - customize this for your CTF"""
-    teams = [
-        Team(
-            name="team-alpha",
-            ip="10.0.2.10",
-            expected_tcp_ports=[22, 80, 5000],
-            expected_udp_ports=[],
-            score=1000
-        ),
-        Team(
-            name="team-bravo",
-            ip="10.0.2.11",
-            expected_tcp_ports=[22, 7000, 8081],
-            expected_udp_ports=[],
-            score=1000
-        ),
-        Team(
-            name="team-charlie",
-            ip="10.0.2.12",
-            expected_tcp_ports=[22, 3000, 8080],
-            expected_udp_ports=[],
-            score=1000
-        ),
-    ]
-    
-    for team in teams:
-        game_state.add_team(team)
-        logger.info("Added team: %s (%s)", team.name, team.ip)
+    """Initialize teams from teams.json"""
+    game_state.load_teams_from_json()
 
 
 def main():
@@ -90,6 +68,12 @@ def main():
         help='Points awarded for valid flag (default: 50)'
     )
     parser.add_argument(
+        '--flag-stolen-penalty',
+        type=int,
+        default=25,
+        help='Penalty points for team that gets a flag stolen (default: 25)'
+    )
+    parser.add_argument(
         '--enable-udp',
         action='store_true',
         help='Enable UDP port scanning (requires root)'
@@ -116,6 +100,7 @@ def main():
     game_state.scan_interval = args.scan_interval
     game_state.penalty_per_port = args.penalty
     game_state.flag_points = args.flag_points
+    game_state.flag_stolen_penalty = args.flag_stolen_penalty
     game_state.enable_udp = args.enable_udp
     
     if args.debug:
@@ -129,9 +114,13 @@ def main():
     logger.info("  Admin Server: http://127.0.0.1:%d (localhost only)", args.admin_port)
     logger.info("  Scan Interval: %d seconds", args.scan_interval)
     logger.info("  Penalty per port: %d points", args.penalty)
-    logger.info("  Flag points: %d points", args.flag_points)
+    logger.info("  Flag capture points: %d points", args.flag_points)
+    logger.info("  Flag stolen penalty: %d points", args.flag_stolen_penalty)
     logger.info("  UDP scanning: %s", "enabled" if args.enable_udp else "disabled")
     logger.info("=" * 60)
+    
+    # Initialize log files
+    initialize_logs()
     
     # Setup teams
     setup_teams()
